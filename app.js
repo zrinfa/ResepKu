@@ -6,6 +6,21 @@ let editingResepItems = [];
 const $ = s => document.querySelector(s);
 const rp = n => 'Rp ' + Math.round(n || 0).toLocaleString('id-ID');
 const fmtG = g => g >= 1000 ? (g/1000).toLocaleString('id-ID',{maximumFractionDigits:2}) + ' kg' : Math.round(g*100)/100 + ' g';
+/* Rupiah: tampil pakai titik ribuan, simpan sebagai angka */
+const parseRp = v => +(String(v ?? '').replace(/[^0-9]/g, '') || 0);
+const formatRibuan = n => (+n || 0).toLocaleString('id-ID');
+function attachRpInput(el){
+  if(!el) return;
+  el.addEventListener('input', () => {
+    const angka = parseRp(el.value);
+    el.value = angka ? formatRibuan(angka) : '';
+  });
+  el.addEventListener('blur', () => {
+    const angka = parseRp(el.value);
+    el.value = angka ? formatRibuan(angka) : (el.id === 'hitung-overhead' ? '0' : '');
+    if(el.id === 'bahan-harga') updPreview();
+  });
+}
 
 const ICON_EDIT = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>';
 const ICON_TRASH = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
@@ -47,7 +62,19 @@ const Resep = {
   del: id=>tx('resep','readwrite',s=>s.delete(id)),
 };
 
-const hargaPerGram = b => b.satuan === 'kg' ? b.harga/1000 : b.harga;
+const hargaPerGram = b => {
+  if(!b) return 0;
+  if(b.satuan === 'kg') return (b.harga || 0) / 1000;
+  if(b.satuan === 'sachet' || b.satuan === 'bungkus') return (b.isi > 0) ? (b.harga || 0) / b.isi : 0;
+  return b.harga || 0; // 'g' dan data lama
+};
+const labelSatuan = b => {
+  if(b.satuan === 'kg') return '/ kg';
+  if(b.satuan === 'g') return '/ g';
+  if(b.satuan === 'sachet') return '/ sachet' + (b.isi > 0 ? ' (' + b.isi + ' g)' : '');
+  if(b.satuan === 'bungkus') return '/ bungkus' + (b.isi > 0 ? ' (' + b.isi + ' g)' : '');
+  return '/ ' + (b.satuan || 'g');
+};
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2400); }
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
@@ -66,7 +93,7 @@ async function renderBahan(){
   $('#bahan-count').textContent = bahanCache.length;
   $('#bahan-tbody').innerHTML = list.map(b=>'<tr>'
     + '<td data-l="Nama"><b>'+esc(b.nama)+'</b></td>'
-    + '<td data-l="Harga beli">'+rp(b.harga)+' / '+b.satuan+'</td>'
+    + '<td data-l="Harga beli">'+rp(b.harga)+' '+esc(labelSatuan(b))+'</td>'
     + '<td data-l="Rp per gram"><b>'+rp(hargaPerGram(b))+'</b></td>'
     + '<td data-l="Aksi"><button class="icon-btn" onclick="editBahan('+b.id+')">'+ICON_EDIT+' Ubah</button>'
     + '<button class="icon-btn del" onclick="delBahan('+b.id+')">'+ICON_TRASH+' Hapus</button></td>'
@@ -94,28 +121,55 @@ function esc(s){ return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 
 window.editBahan = async id => {
   const b = await Bahan.get(id); if(!b) return;
-  $('#bahan-id').value=b.id; $('#bahan-nama').value=b.nama; $('#bahan-harga').value=b.harga; $('#bahan-satuan').value=b.satuan;
+  $('#bahan-id').value=b.id; $('#bahan-nama').value=b.nama;
+  $('#bahan-harga').value=b.harga ? formatRibuan(b.harga) : '';
+  $('#bahan-satuan').value=b.satuan || 'kg';
+  $('#bahan-isi').value=b.isi || '';
+  toggleIsiWrap();
   $('#bahan-submit').textContent='Simpan Perubahan'; $('#bahan-batal').hidden=false; updPreview();
   window.scrollTo({top:0,behavior:'smooth'});
 };
 window.delBahan = async id => { if(confirm('Hapus bahan ini?')){ await Bahan.del(id); renderBahan(); toast('Bahan sudah dihapus'); } };
 
-function updPreview(){
-  const h=+$('#bahan-harga').value||0, s=$('#bahan-satuan').value;
-  $('#bahan-preview').textContent = h
-    ? 'Harga per gram: ' + rp(s==='kg'?h/1000:h) + ' (dari ' + rp(h) + ' per ' + (s==='kg' ? '1 kg' : '1 gram') + ')'
-    : 'Harga per gram: belum diisi';
+function toggleIsiWrap(){
+  const s=$('#bahan-satuan').value;
+  const perlu=(s==='sachet'||s==='bungkus');
+  $('#bahan-isi-wrap').hidden=!perlu;
+  if(!perlu) $('#bahan-isi').value='';
 }
-$('#bahan-harga').oninput=updPreview; $('#bahan-satuan').onchange=updPreview;
+function updPreview(){
+  const h=parseRp($('#bahan-harga').value), s=$('#bahan-satuan').value;
+  const isi=+$('#bahan-isi').value||0;
+  if(!h){ $('#bahan-preview').textContent='Harga per gram: belum diisi'; return; }
+  if(s==='kg'){
+    $('#bahan-preview').textContent='Harga per gram: '+rp(h/1000)+' (dari '+rp(h)+' per 1 kg)';
+  }else if(s==='g'){
+    $('#bahan-preview').textContent='Harga per gram: '+rp(h)+' (dari '+rp(h)+' per 1 gram)';
+  }else{
+    if(!isi){ $('#bahan-preview').textContent='Isi dulu berat per '+(s==='sachet'?'sachet':'bungkus')+' (gram)'; return; }
+    $('#bahan-preview').textContent='Harga per gram: '+rp(h/isi)+' (dari '+rp(h)+' per 1 '+s+' isi '+isi+' g)';
+  }
+}
+function initBahanForm(){
+  attachRpInput($('#bahan-harga'));
+  attachRpInput($('#hitung-overhead'));
+  $('#bahan-harga').addEventListener('input', updPreview);
+  $('#bahan-satuan').addEventListener('change', ()=>{ toggleIsiWrap(); updPreview(); });
+  $('#bahan-isi').addEventListener('input', updPreview);
+}
 $('#form-bahan').onsubmit = async e=>{
   e.preventDefault();
-  const v={nama:$('#bahan-nama').value.trim(), harga:+$('#bahan-harga').value, satuan:$('#bahan-satuan').value};
+  const satuan=$('#bahan-satuan').value;
+  const isi=+$('#bahan-isi').value||0;
+  const v={nama:$('#bahan-nama').value.trim(), harga:parseRp($('#bahan-harga').value), satuan, isi: (satuan==='sachet'||satuan==='bungkus') ? isi : 0};
   if(!v.nama){ toast('Tulis nama bahan dulu'); return; }
+  if(!v.harga){ toast('Tulis harga beli dulu'); return; }
+  if((satuan==='sachet'||satuan==='bungkus') && !isi){ toast('Tulis isi gram per '+satuan); return; }
   const id=$('#bahan-id').value;
   if(id){ v.id=+id; await Bahan.put(v); toast('Bahan sudah diperbarui'); } else { await Bahan.add(v); toast('Bahan tersimpan'); }
-  e.target.reset(); $('#bahan-id').value=''; $('#bahan-submit').textContent='Simpan Bahan'; $('#bahan-batal').hidden=true; updPreview(); renderBahan();
+  e.target.reset(); $('#bahan-id').value=''; $('#bahan-submit').textContent='Simpan Bahan'; $('#bahan-batal').hidden=true; toggleIsiWrap(); updPreview(); renderBahan();
 };
-$('#bahan-batal').onclick=e=>{e.target.form.reset();$('#bahan-id').value='';$('#bahan-submit').textContent='Simpan Bahan';e.target.hidden=true;updPreview();};
+$('#bahan-batal').onclick=e=>{e.target.form.reset();$('#bahan-id').value='';$('#bahan-submit').textContent='Simpan Bahan';e.target.hidden=true;toggleIsiWrap();updPreview();};
 $('#bahan-cari').oninput=renderBahan; $('#resep-cari-bahan').oninput=renderBahan;
 /* Data demo: 20 bahan dan 4 resep, siap untuk demo */
 const DEMO_BAHAN = [
@@ -153,9 +207,9 @@ async function muatDemo(force){
   const peta = {};
   const semua = await Bahan.all();
   semua.forEach(b=>{ peta[b.nama.toLowerCase()] = b.id; });
-  for(const [nama,harga,satuan] of DEMO_BAHAN){
+  for(const [nama,harga,satuan,isi] of DEMO_BAHAN){
     if(peta[nama.toLowerCase()]) continue;
-    const id = await Bahan.add({nama,harga,satuan});
+    const id = await Bahan.add({nama,harga,satuan,isi:isi||0});
     peta[nama.toLowerCase()] = id;
   }
   const resepAda = await Resep.all();
@@ -265,7 +319,7 @@ async function doHitung(){
   const r=(await Resep.all()).find(x=>x.id===rid); if(!r)return;
   const mode=document.querySelector('input[name="target-mode"]:checked').value;
   const target=+$('#hitung-jumlah').value||0; if(target<=0){toast('Tulis jumlah yang mau dibuat');return;}
-  const overhead=+$('#hitung-overhead').value||0, margin=+$('#hitung-margin').value||0;
+  const overhead=parseRp($('#hitung-overhead').value), margin=+$('#hitung-margin').value||0;
   const roundTo=+$('#hitung-round').value||1;
 
   const batchGram=r.items.reduce((a,i)=>a+i.jumlah,0);
@@ -329,4 +383,4 @@ $('#file-import').onchange=e=>{
   rd.readAsText(f);
 };
 
-(async()=>{ await openDB(); updPreview(); await renderBahan(); await renderResepList(); await muatDemo(false); })();
+(async()=>{ await openDB(); initBahanForm(); toggleIsiWrap(); updPreview(); await renderBahan(); await renderResepList(); await muatDemo(false); })();

@@ -1,5 +1,5 @@
 /* ResepKu SW: offline app-shell */
-const CACHE = 'resepku-v1';
+const CACHE = 'resepku-v2';
 const ASSETS = [
   './',
   './index.html',

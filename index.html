@@ -28,6 +28,7 @@
         <p>Hitung bahan dan modal jualan roti</p>
       </div>
     </div>
+    <button id="btn-install-header" class="btn-install-header" hidden>⬇ Install App</button>
     <nav class="tabs" aria-label="Langkah">
       <button class="tab active" data-tab="bahan">
         <span class="num">1</span>
@@ -63,14 +64,19 @@
           <label for="bahan-nama">Nama bahan
             <input type="text" id="bahan-nama" placeholder="Contoh: Tepung Terigu" required autocomplete="off">
           </label>
-          <label for="bahan-harga">Harga beli (Rp). Contoh: 14000
-            <input type="number" id="bahan-harga" min="0" step="100" inputmode="numeric" placeholder="Contoh: 14000" required>
+          <label for="bahan-harga">Harga beli (Rp). Contoh: 14.000
+            <input type="text" id="bahan-harga" inputmode="numeric" placeholder="Contoh: 14.000" required autocomplete="off">
           </label>
           <label for="bahan-satuan">Harga di atas untuk ukuran:
             <select id="bahan-satuan">
               <option value="kg">1 kg (1000 gram)</option>
               <option value="g">1 gram</option>
+              <option value="sachet">1 sachet</option>
+              <option value="bungkus">1 bungkus</option>
             </select>
+          </label>
+          <label for="bahan-isi" id="bahan-isi-wrap" hidden>Isi bersih per kemasan (gram). Contoh: 11
+            <input type="number" id="bahan-isi" min="1" step="1" inputmode="numeric" placeholder="Contoh: 11">
           </label>
           <div class="harga-preview" id="bahan-preview">Harga per gram: belum diisi</div>
           <div class="btn-row">
@@ -171,7 +177,7 @@
             <input type="number" id="hitung-jumlah" min="1" step="1" value="50" inputmode="numeric">
           </label>
           <label for="hitung-overhead">Biaya lain Rp (gas, listrik, plastik). Isi 0 jika tidak ada.
-            <input type="number" id="hitung-overhead" min="0" step="500" value="0" inputmode="numeric">
+            <input type="text" id="hitung-overhead" inputmode="numeric" value="0" autocomplete="off">
           </label>
         </div>
         <div class="row2">
@@ -237,27 +243,30 @@ if ('serviceWorker' in navigator) {
 }
 let deferredPrompt = null;
 const btnInstall = document.getElementById('btn-install');
+const btnInstallHeader = document.getElementById('btn-install-header');
+function showInstallBtns(){ if(btnInstall) btnInstall.hidden=false; if(btnInstallHeader) btnInstallHeader.hidden=false; }
+function hideInstallBtns(){ if(btnInstall) btnInstall.hidden=true; if(btnInstallHeader) btnInstallHeader.hidden=true; }
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredPrompt = e;
-  if (btnInstall) btnInstall.hidden = false;
+  showInstallBtns();
 });
-if (btnInstall) {
-  btnInstall.onclick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    deferredPrompt = null;
-    btnInstall.hidden = true;
-  };
+async function promptInstall(){
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  hideInstallBtns();
 }
+if (btnInstall) btnInstall.onclick = promptInstall;
+if (btnInstallHeader) btnInstallHeader.onclick = promptInstall;
 window.addEventListener('appinstalled', () => {
   deferredPrompt = null;
-  if (btnInstall) btnInstall.hidden = true;
+  hideInstallBtns();
 });
 // Sembunyikan tombol jika sudah standalone
 if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-  if (btnInstall) btnInstall.hidden = true;
+  hideInstallBtns();
 }
 function updOffline() {
   const el = document.getElementById('offline-status');
